@@ -11,6 +11,7 @@ python scaffold.py
 ## Steps
 
 - [x] **1.** peer_mask
+- [x] **2.** encode_puzzle
 
 ---
 

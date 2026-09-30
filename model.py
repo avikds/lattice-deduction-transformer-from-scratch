@@ -57,3 +57,66 @@ def peer_mask(n, box_rows, box_cols):
 
     return peers
 
+# Step 2 - encode_puzzle
+import torch.nn.functional as F
+
+def encode_puzzle(grid):
+    # grid has shape (..., n, n), with 0 representing an empty cell.
+    # The output has shape (..., n, n, n), where the last axis
+    # represents candidate digits 1..n.
+    n = grid.shape[-1]
+
+    # Candidate digit indices: 0..n-1, corresponding to digits 1..n.
+    digits = torch.arange(n, device=grid.device)
+
+    # For a given cell:
+    #   - grid == 0  -> every digit remains a candidate
+    #   - grid != 0  -> only the given digit remains a candidate
+    candidates = (grid.unsqueeze(-1) == 0) | (
+        grid.unsqueeze(-1) - 1 == digits
+    )
+
+    return candidates
+
+
+def onehot_grid(grid):
+    # grid is assumed to be fully filled, with digits 1..n.
+    # Convert each digit into a one-hot vector along a new final axis.
+    n = grid.shape[-1]
+
+    return F.one_hot(grid.long() - 1, num_classes=n).bool()
+
+
+def alive_counts(x):
+    # Count the number of surviving candidates for each cell.
+    # (..., n, n, n) -> (..., n, n)
+    return x.sum(dim=-1)
+
+
+def is_solved(x):
+    # A lattice state is solved exactly when every cell
+    # has one and only one remaining candidate.
+    counts = alive_counts(x)
+    return (counts == 1).all(dim=(-2, -1))
+
+
+def is_bottom(x):
+    # The state is at the bottom of the lattice when at least
+    # one cell has no remaining candidates.
+    counts = alive_counts(x)
+    return (counts == 0).any(dim=(-2, -1))
+
+
+def decode(x):
+    # Return the decided digit for each cell.
+    # Cells with exactly one candidate are decoded to 1..n;
+    # undecided cells are returned as 0.
+    counts = alive_counts(x)
+    decided = counts == 1
+
+    # argmax gives the candidate index 0..n-1.
+    digits = x.long().argmax(dim=-1) + 1
+
+    # Keep only decided cells; encode all other cells as 0.
+    return torch.where(decided, digits, torch.zeros_like(digits))
+
