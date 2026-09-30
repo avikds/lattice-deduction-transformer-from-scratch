@@ -1098,3 +1098,61 @@ def train_step(model, opt, pool, cfg, generator):
         "conflict": int(out["conflict"].sum().item()),
     }
 
+# Step 18 - train_ldt
+def train_ldt(model, dataset, steps, cfg, seed, eval_fn=None, eval_at=()):
+    # Single generator shared by the solve pool and all stochastic
+    # operations during training.
+    g = torch.Generator().manual_seed(seed)
+
+    # Create the on-policy solve pool.
+    pool = SolvePool(
+        dataset,
+        cfg["pool_size"],
+        g,
+        model.n
+    )
+
+    # AdamW optimizer with the specified hyperparameters.
+    opt = torch.optim.AdamW(
+        model.parameters(),
+        lr=cfg["lr"],
+        weight_decay=0.1,
+        betas=(0.9, 0.95)
+    )
+
+    history = []
+    evals = {}
+
+    for step in range(steps):
+        # Update every parameter group's learning rate according to
+        # the warmup + cosine schedule.
+        lr = lr_at(
+            step,
+            steps,
+            cfg["lr"],
+            cfg["warmup"]
+        )
+
+        for group in opt.param_groups:
+            group["lr"] = lr
+
+        # Perform one on-policy training step.
+        metrics = train_step(
+            model,
+            opt,
+            pool,
+            cfg,
+            g
+        )
+
+        history.append(metrics)
+
+        # `step` is zero-based, while checkpoint evaluation steps are
+        # numbered starting from 1.
+        s = step + 1
+
+        if eval_fn is not None and s in eval_at:
+            evals[s] = eval_fn(model)
+
+    return history, evals
+
