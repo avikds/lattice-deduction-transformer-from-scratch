@@ -18,6 +18,7 @@ python scaffold.py
 - [x] **6.** make_dataset
 - [x] **7.** apply_symmetry
 - [x] **8.** augmented_queue
+- [x] **9.** LatticeEmbedding
 
 ---
 

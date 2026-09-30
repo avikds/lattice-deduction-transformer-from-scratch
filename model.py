@@ -527,3 +527,48 @@ def augmented_queue(dataset, copies, n, generator):
 
     return qx, qy
 
+# Step 9 - LatticeEmbedding
+import torch.nn as nn
+
+class LatticeEmbedding(nn.Module):
+    def __init__(self, n, V, d):
+        super().__init__()
+
+        self.n = n
+
+        # Project the V-dimensional lattice state of each cell
+        # into the model dimension d.
+        self.inp = nn.Linear(V, d)
+
+        # Learned row and column positional embeddings.
+        self.row_emb = nn.Parameter(torch.randn(n, d) * 0.02)
+        self.col_emb = nn.Parameter(torch.randn(n, d) * 0.02)
+
+        # Learned CLS token, initialized to zeros.
+        self.cls = nn.Parameter(torch.zeros(1, 1, d))
+
+    def forward(self, x):
+        # x: (B, n, n, V)
+        # Convert boolean lattice states to floating point before
+        # passing them through the linear projection.
+        x = x.float()
+
+        # Project each cell independently:
+        # (B, n, n, V) -> (B, n, n, d)
+        h = self.inp(x)
+
+        # Add learned row and column positional information.
+        # row_emb[:, None, :] -> (n, 1, d)
+        # col_emb[None, :, :] -> (1, n, d)
+        h = h + self.row_emb[:, None, :] + self.col_emb[None, :, :]
+
+        # Flatten the n x n cells in row-major order.
+        # (B, n, n, d) -> (B, n*n, d)
+        h = h.reshape(x.shape[0], self.n * self.n, -1)
+
+        # Prepend the CLS token to the sequence.
+        # Expand only across the batch dimension.
+        cls = self.cls.expand(x.shape[0], -1, -1)
+
+        return torch.cat([cls, h], dim=1)
+
