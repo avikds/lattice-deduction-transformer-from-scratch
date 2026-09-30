@@ -17,6 +17,7 @@ python scaffold.py
 - [x] **5.** all_solutions
 - [x] **6.** make_dataset
 - [x] **7.** apply_symmetry
+- [x] **8.** augmented_queue
 
 ---
 

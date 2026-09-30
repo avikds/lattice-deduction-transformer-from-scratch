@@ -491,3 +491,39 @@ def invert_symmetry(x, sym):
 
     return x
 
+# Step 8 - augmented_queue
+def augmented_queue(dataset, copies, n, generator):
+    # For each puzzle in the original dataset, generate `copies`
+    # symmetry-augmented versions. The same symmetry is applied to
+    # both the puzzle state and its solution.
+    states = []
+    solutions = []
+
+    for x0, sol in dataset:
+        for _ in range(copies):
+            sym = random_symmetry(n, generator)
+
+            states.append(apply_symmetry(x0, sym))
+            solutions.append(apply_symmetry(sol, sym))
+
+    # Stack all augmented states into:
+    #   qx -> (N, n, n, n)
+    #   qy -> (N, n, n, n)
+    qx = torch.stack(states, dim=0)
+    qy = torch.stack(solutions, dim=0)
+
+    N = qx.shape[0]
+
+    # Add the solution-set axis of size one:
+    #   (N, n, n, n) -> (N, 1, n, n, n)
+    qy = qy.unsqueeze(1)
+
+    # Shuffle both tensors using exactly the same permutation so that
+    # every puzzle remains paired with its corresponding solution set.
+    order = torch.randperm(N, generator=generator)
+
+    qx = qx[order]
+    qy = qy[order]
+
+    return qx, qy
+
