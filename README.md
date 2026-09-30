@@ -14,6 +14,7 @@ python scaffold.py
 - [x] **2.** encode_puzzle
 - [x] **3.** alpha_target
 - [x] **4.** propagate_singles
+- [x] **5.** all_solutions
 
 ---
 

@@ -240,3 +240,96 @@ def propagate_singles(x, units, peers):
         if torch.equal(out, previous):
             return out
 
+# Step 5 - all_solutions
+import numpy as np
+
+def all_solutions(n, box_rows, box_cols):
+    # Generate every valid completed Sudoku grid using backtracking.
+    # Cells are visited in row-major order and digits are tried in
+    # increasing order, so the resulting solutions are in search order.
+    if n % box_rows != 0 or n % box_cols != 0:
+        raise ValueError("n must be divisible by both box_rows and box_cols")
+    if box_rows * box_cols != n:
+        raise ValueError("box_rows * box_cols must equal n")
+
+    grid = np.zeros((n, n), dtype=np.int64)
+
+    # Track digits already used in each row, column, and box.
+    row_used = [set() for _ in range(n)]
+    col_used = [set() for _ in range(n)]
+
+    boxes_per_row = n // box_cols
+    boxes_per_col = n // box_rows
+    box_used = [set() for _ in range(boxes_per_row * boxes_per_col)]
+
+    solutions = []
+
+    def box_index(r, c):
+        return (r // box_rows) * boxes_per_row + (c // box_cols)
+
+    def backtrack(pos):
+        # All cells have been filled.
+        if pos == n * n:
+            solutions.append(grid.copy())
+            return
+
+        # Row-major traversal.
+        r, c = divmod(pos, n)
+        b = box_index(r, c)
+
+        # Digits are tried in increasing order: 1..n.
+        for d in range(1, n + 1):
+            if d in row_used[r] or d in col_used[c] or d in box_used[b]:
+                continue
+
+            # Place the digit.
+            grid[r, c] = d
+            row_used[r].add(d)
+            col_used[c].add(d)
+            box_used[b].add(d)
+
+            # Continue with the next cell.
+            backtrack(pos + 1)
+
+            # Undo the placement.
+            grid[r, c] = 0
+            row_used[r].remove(d)
+            col_used[c].remove(d)
+            box_used[b].remove(d)
+
+    backtrack(0)
+
+    # Convert the list of grids into the required NumPy array.
+    return np.stack(solutions, axis=0).astype(np.int64)
+
+
+def count_matching(puzzle, solutions):
+    # puzzle has shape (n, n), with 0 denoting an empty cell.
+    # solutions has shape (S, n, n).
+    #
+    # A solution matches the puzzle when every non-zero given agrees
+    # with the corresponding cell in that solution.
+
+    puzzle = np.asarray(puzzle)
+    solutions = np.asarray(solutions)
+
+    if puzzle.ndim != 2:
+        raise ValueError("puzzle must have shape (n, n)")
+    if solutions.ndim != 3:
+        raise ValueError("solutions must have shape (S, n, n)")
+    if solutions.shape[1:] != puzzle.shape:
+        raise ValueError("puzzle and solutions have incompatible shapes")
+
+    # Only compare positions containing givens.
+    givens = puzzle != 0
+
+    if not np.any(givens):
+        return int(solutions.shape[0])
+
+    matches = np.all(
+        solutions[:, givens] == puzzle[givens],
+        axis=1
+    )
+
+    return int(matches.sum())
+
