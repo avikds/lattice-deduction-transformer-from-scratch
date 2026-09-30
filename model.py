@@ -1156,3 +1156,75 @@ def train_ldt(model, dataset, steps, cfg, seed, eval_fn=None, eval_at=()):
 
     return history, evals
 
+# Step 19 - solve_puzzle
+@torch.no_grad()
+def solve_puzzle(model, x0, cfg, generator, chains, max_rounds, augment=True):
+    # Start with `chains` identical copies of the initial lattice state.
+    states = x0.unsqueeze(0).expand(chains, -1, -1, -1).clone()
+
+    forwards = 0
+
+    for round_idx in range(1, max_rounds + 1):
+        # Draw and apply one independent symmetry to every chain.
+        if augment:
+            syms = [
+                random_symmetry(model.n, generator)
+                for _ in range(chains)
+            ]
+
+            augmented_states = [
+                apply_symmetry(states[i], syms[i])
+                for i in range(chains)
+            ]
+
+            batch = torch.stack(augmented_states, dim=0)
+        else:
+            syms = None
+            batch = states
+
+        # Run one model/solver call for all chains in parallel.
+        out = solve_step(
+            model,
+            batch,
+            cfg,
+            generator
+        )
+
+        forwards += 1
+
+        # The returned states are still in the augmented coordinate
+        # systems. Undo each chain's symmetry before inspecting/keeping
+        # the states.
+        new_states = out["x_new"]
+
+        if augment:
+            new_states = torch.stack([
+                invert_symmetry(new_states[i], syms[i])
+                for i in range(chains)
+            ], dim=0)
+
+        # If any chain has solved the puzzle, return the first solved
+        # chain in the original coordinate system.
+        solved = out["solved"]
+
+        if solved.any():
+            first_solved = int(torch.nonzero(solved, as_tuple=False)[0, 0])
+
+            return (
+                decode(new_states[first_solved]),
+                forwards,
+                round_idx
+            )
+
+        # Restart conflicted chains from a fresh copy of the original
+        # puzzle. Non-conflicted chains continue from their new states.
+        states = new_states.clone()
+
+        conflict = out["conflict"]
+
+        if conflict.any():
+            states[conflict] = x0
+
+    # No chain solved within the allotted rounds.
+    return None, forwards, max_rounds
+

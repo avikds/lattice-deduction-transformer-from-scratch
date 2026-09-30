@@ -28,6 +28,7 @@ python scaffold.py
 - [x] **16.** SolvePool
 - [x] **17.** train_step
 - [x] **18.** train_ldt
+- [x] **19.** solve_puzzle
 
 ---
 
