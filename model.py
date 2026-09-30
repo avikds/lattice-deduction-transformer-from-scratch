@@ -1228,3 +1228,131 @@ def solve_puzzle(model, x0, cfg, generator, chains, max_rounds, augment=True):
     # No chain solved within the allotted rounds.
     return None, forwards, max_rounds
 
+# Step 20 - evaluate
+def valid_grid(grid, units):
+    # A valid completed Sudoku grid must have shape (n, n), and every
+    # unit must contain each digit 1..n exactly once.
+    if grid.ndim != 2 or grid.shape[0] != grid.shape[1]:
+        return False
+
+    n = grid.shape[0]
+    required = set(range(1, n + 1))
+
+    for unit in units:
+        values = [int(grid[r, c]) for r, c in unit]
+
+        if set(values) != required or len(values) != n:
+            return False
+
+    return True
+
+
+def evaluate(
+    model,
+    dataset,
+    cfg,
+    seed,
+    units,
+    chains=8,
+    max_rounds=30,
+    augment=True,
+    verify=False
+):
+    # One generator is shared across all solves and all retry attempts.
+    g = torch.Generator().manual_seed(seed)
+
+    # Save the original mode so it can be restored afterwards.
+    was_training = model.training
+    model.eval()
+
+    outcomes = []
+    costs = []
+
+    try:
+        for x0, sol in dataset:
+            total_forwards = 0
+            outcome = "abstain"
+
+            # Without verification, perform exactly one solve attempt.
+            # With verification, retry invalid returned grids up to
+            # 10 total solves for this puzzle.
+            max_attempts = 10 if verify else 1
+
+            for _ in range(max_attempts):
+                grid, forwards, _ = solve_puzzle(
+                    model,
+                    x0,
+                    cfg,
+                    g,
+                    chains=chains,
+                    max_rounds=max_rounds,
+                    augment=augment
+                )
+
+                total_forwards += forwards
+
+                # No grid means the solver abstained. With verification
+                # enabled, another attempt is allowed because the total
+                # attempt budget has not yet been exhausted.
+                if grid is None:
+                    if not verify:
+                        break
+                    continue
+
+                # In verification mode, reject any returned grid that is
+                # not a valid Sudoku solution and retry.
+                if verify and not valid_grid(grid, units):
+                    continue
+
+                # A returned, accepted grid is either correct or wrong.
+                expected = decode(sol)
+
+                if torch.equal(
+                    torch.as_tensor(grid, device=expected.device),
+                    expected
+                ):
+                    outcome = "correct"
+                else:
+                    outcome = "wrong"
+
+                # A valid returned grid terminates the retry loop.
+                break
+
+            outcomes.append(outcome)
+            costs.append(total_forwards)
+
+    finally:
+        # Restore the model to its original mode.
+        if was_training:
+            model.train()
+        else:
+            model.eval()
+
+    # Aggregate evaluation metrics.
+    total = len(outcomes)
+
+    correct = outcomes.count("correct")
+    wrong = outcomes.count("wrong")
+    abstain = outcomes.count("abstain")
+
+    accuracy = correct / total if total else 0.0
+    soundness = (correct + abstain) / total if total else 0.0
+
+    if costs:
+        p50 = float(np.percentile(costs, 50))
+        p90 = float(np.percentile(costs, 90))
+    else:
+        p50 = 0.0
+        p90 = 0.0
+
+    return {
+        "accuracy": accuracy,
+        "soundness": soundness,
+        "p50": p50,
+        "p90": p90,
+        "wrong": wrong,
+        "abstain": abstain,
+        "outcomes": outcomes,
+        "costs": costs,
+    }
+
