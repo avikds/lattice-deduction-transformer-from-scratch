@@ -12,6 +12,7 @@ python scaffold.py
 
 - [x] **1.** peer_mask
 - [x] **2.** encode_puzzle
+- [x] **3.** alpha_target
 
 ---
 

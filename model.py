@@ -120,3 +120,48 @@ def decode(x):
     # Keep only decided cells; encode all other cells as 0.
     return torch.where(decided, digits, torch.zeros_like(digits))
 
+# Step 3 - alpha_target
+def consistent(y, x):
+    # y and x have broadcastable shapes ending in (n, n, n).
+    # A one-hot solution y is consistent with x when every candidate
+    # bit that is alive in y is also alive in x.
+    #
+    # (~y) | x is True everywhere except where y is True and x is False.
+    # Reduce over the three lattice axes to obtain one boolean per
+    # leading/batch position.
+    return ((~y) | x).all(dim=(-3, -2, -1))
+
+
+def alpha_target(x, Y, prev=None):
+    # x:    (B, n, n, n)          current lattice states
+    # Y:    (B, K, n, n, n)       one-hot candidate states for solutions
+    # prev: (B, n, n, n), optional previous non-empty target
+    
+    # Check which solutions are consistent with each state.
+    # x is expanded along the solution axis so it broadcasts against Y.
+    cons = consistent(Y, x.unsqueeze(1))  # (B, K)
+
+    # A row is dead when none of its K solutions is consistent.
+    dead = ~cons.any(dim=1)  # (B,)
+
+    # Keep only the solutions that are consistent with each state.
+    # Then OR across the consistent solutions.
+    consistent_solutions = Y & cons.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    solution_union = consistent_solutions.any(dim=1)  # (B, n, n, n)
+
+    # The target is restricted to candidates that are both alive in x
+    # and alive in at least one consistent solution.
+    target = x & solution_union
+
+    # When no solution is consistent with a row, optionally fall back
+    # to the previous non-empty target of that chain.
+    if prev is not None:
+        fallback = x & prev
+        target = torch.where(
+            dead.view(-1, 1, 1, 1),
+            fallback,
+            target
+        )
+
+    return target, dead
+
