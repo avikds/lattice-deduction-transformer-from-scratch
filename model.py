@@ -165,3 +165,78 @@ def alpha_target(x, Y, prev=None):
 
     return target, dead
 
+# Step 4 - propagate_singles
+def naked_singles(x, peers):
+    # Work on a copy so the input state is not modified in-place.
+    out = x.clone()
+
+    # A cell is a naked single when exactly one candidate remains.
+    counts = x.sum(dim=-1)
+    single_cells = counts == 1
+
+    # Get the candidate digit index for each cell. For cells that are not
+    # singles, the value is irrelevant because we mask them below.
+    single_digit = x.long().argmax(dim=-1)
+
+    # For every decided cell, remove its digit from all of its peers.
+    n = x.shape[0]
+    for r in range(n):
+        for c in range(n):
+            if single_cells[r, c]:
+                d = int(single_digit[r, c])
+                out[:, :, d] = out[:, :, d] & ~peers[r, c]
+
+    return out
+
+
+def hidden_singles(x, units):
+    # Work on a copy so the input state is not modified in-place.
+    out = x.clone()
+
+    n = x.shape[0]
+
+    # For each unit and each digit, count how many cells can still
+    # contain that digit. If exactly one cell can contain it, that
+    # cell must be pinned to that digit.
+    for unit in units:
+        for d in range(n):
+            possible_cells = [
+                (r, c) for r, c in unit if x[r, c, d]
+            ]
+
+            if len(possible_cells) == 1:
+                r, c = possible_cells[0]
+
+                # Pin the cell to this unique digit.
+                out[r, c, :] = False
+                out[r, c, d] = True
+
+    return out
+
+
+def propagate_singles(x, units, peers):
+    # Alternate naked and hidden singles until reaching a fixed point
+    # or until a contradiction creates an empty cell.
+    out = x.clone()
+
+    while True:
+        # Stop immediately if the state has already reached the bottom.
+        if (out.sum(dim=-1) == 0).any():
+            return out
+
+        previous = out.clone()
+
+        # First propagate all currently decided digits to their peers.
+        out = naked_singles(out, peers)
+
+        # Then apply hidden-single deductions.
+        out = hidden_singles(out, units)
+
+        # Stop if the new state contains an empty cell.
+        if (out.sum(dim=-1) == 0).any():
+            return out
+
+        # If neither rule changed anything, the fixed point has been reached.
+        if torch.equal(out, previous):
+            return out
+
