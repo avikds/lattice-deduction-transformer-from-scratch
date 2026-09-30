@@ -1,2 +1,17 @@
-# lattice-deduction-transformer-from-scratch
-The 2026 paper 'Lattice Deduction Transformers', rebuilt in pure PyTorch on 4 by 4 Sudoku. Represent partial knowledge as the grid powerset lattice, implement the abstraction operator that turns known solutions into per-step targets, and write the symbolic solver the model will be measured against. Then build the recurrent transformer that reads…
+# Lattice Deduction Transformer from Scratch
+
+The 2026 paper 'Lattice Deduction Transformers', rebuilt in pure PyTorch on 4 by 4 Sudoku. Represent partial knowledge as the grid powerset lattice, implement the abstraction operator that turns known solutions into per-step targets, and write the symbolic solver the model will be measured against. Then build the recurrent transformer that reads a lattice state, unrolls a shared stack with the input re-injected, and emits candidate and conflict logits at every iteration; the asymmetric loss that makes elimination conservative; and the step operator that thresholds, detects conflicts and branches at random. Train it on-policy from a pool of its own partially deduced states, wrapped in Sudoku's symmetries, and run the parallel solve with restarts. The report reproduces the paper's shape of result at toy scale: deduction replaces search as training proceeds, parallel chains lift accuracy, and soundness is what separates a correct answer from a confident wrong one.
+
+## How to run
+
+```bash
+python scaffold.py
+```
+
+## Steps
+
+- [x] **1.** peer_mask
+
+---
+
+Built on Deep-ML.
