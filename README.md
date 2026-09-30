@@ -26,6 +26,7 @@ python scaffold.py
 - [x] **14.** branch_pin
 - [x] **15.** solve_step
 - [x] **16.** SolvePool
+- [x] **17.** train_step
 
 ---
 

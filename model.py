@@ -1032,3 +1032,69 @@ class SolvePool:
             self.prev[refill_idx] = new_x & new_Y[:, 0]
             self.age[refill_idx] = 0
 
+# Step 17 - train_step
+import math
+import torch.nn as nn
+
+def lr_at(step, steps, peak, warmup):
+    # Linear warmup for steps 0 .. warmup-1:
+    # step 0     -> peak / warmup
+    # step warmup-1 -> peak
+    if step < warmup:
+        return peak * (step + 1) / warmup
+
+    # Cosine decay starts at step == warmup, where p == 0
+    # and therefore the learning rate is exactly peak.
+    p = (step - warmup) / max(1, steps - warmup)
+
+    return peak * 0.5 * (1.0 + math.cos(math.pi * p))
+
+
+def train_step(model, opt, pool, cfg, generator):
+    # Sample a distinct batch of pool slots.
+    idx, x, Y, prev = pool.sample(cfg["batch_size"])
+
+    # Run one solver step in training mode.
+    out = solve_step(
+        model,
+        x,
+        cfg,
+        generator,
+        Y=Y,
+        prev=prev
+    )
+
+    loss = out["loss"]
+
+    # Backpropagation and one optimizer step.
+    opt.zero_grad(set_to_none=True)
+    loss.backward()
+
+    # Clip the total gradient norm to 1.0.
+    nn.utils.clip_grad_norm_(
+        model.parameters(),
+        1.0
+    )
+
+    opt.step()
+
+    # A chain terminates when it either conflicts or is solved.
+    terminal = out["conflict"] | out["solved"]
+
+    # Update the corresponding pool slots.
+    pool.update(
+        idx,
+        out["x_new"],
+        out["target"],
+        terminal,
+        cfg["max_age"]
+    )
+
+    return {
+        "loss": float(loss.detach().item()),
+        "false_elim": int(out["false_elim"]),
+        "elims": int(out["elims"]),
+        "solved": int(out["solved"].sum().item()),
+        "conflict": int(out["conflict"].sum().item()),
+    }
+
