@@ -32,6 +32,26 @@ python scaffold.py
 - [x] **20.** evaluate
 - [x] **21.** ldt_experiment
 
----
+## Results
 
-Built on Deep-ML.
+```
+288 complete 4x4 grids; 300 training puzzles and 100 test puzzles with 5 to 8 givens
+
+1. The symbolic reference
+   symbolic ref: 100/100 test puzzles
+
+2. On-policy training with the asymmetric loss
+   training: 800 steps, time=24.9898, elims=96723, false_elim=18
+   Eliminations rise as the model learns; unsound ones are the soundness gauge.
+
+3. Train/test compute trade-off
+   train/test trend: 300 steps: accuracy=0.0000, soundness=0.5667, p50=10.0000; 500 steps: accuracy=0.6000, soundness=0.6667, p50=7.0000; 800 steps: accuracy=0.9667, soundness=0.9667, p50=2.0000
+   Better deduction means fewer forward passes per puzzle: search shrinks as training grows.
+
+4. Deduction, search, and soundness
+   deduction only: accuracy=0.9200, soundness=0.9200, wrong=8, abstain=0, p50=2.0000, p90=3.0000
+   parallel search: accuracy=1.0000, soundness=1.0000, wrong=0, abstain=0, p50=1.0000, p90=2.0000
+   parallel search: accuracy=1.0000, soundness=1.0000, wrong=0, abstain=0, p50=1.0000, p90=2.0000
+   Parallel chains under fresh symmetries lift accuracy; wrong answers are undetected conflicts,
+   which the paper removes with more training and this toy removes with a rule verifier.
+```
