@@ -829,3 +829,104 @@ def branch_pin(x, logits, tau, generator):
 
     return out_flat.reshape_as(x)
 
+# Step 15 - solve_step
+def solve_step(model, x, cfg, generator, Y=None, prev=None):
+    # Run the recurrent transformer.
+    b_iters, c_iters = model(x)
+
+    # Use the final iteration for the discrete solver step.
+    # Detach because thresholding, conflict detection, and branching
+    # are not differentiable.
+    b = b_iters[-1].detach()
+    c = c_iters[-1].detach()
+
+    # Eliminate candidates whose predicted probability is below threshold.
+    probs = torch.sigmoid(b)
+    x2 = threshold_eliminate(
+        x,
+        probs,
+        cfg["theta_elim"]
+    )
+
+    result = {}
+
+    if Y is not None:
+        # Training mode: compute the sound target from the supplied
+        # solution set.
+        target, dead = alpha_target(
+            x,
+            Y,
+            prev
+        )
+
+        # Keep the original model outputs for gradient computation.
+        loss = ldt_loss(
+            b_iters,
+            c_iters,
+            target,
+            dead,
+            cfg
+        )
+
+        # A row conflicts when no supplied solution remains consistent
+        # with the post-elimination state.
+        cons_x2 = consistent(
+            Y,
+            x2.unsqueeze(1)
+        )
+        conflict = ~cons_x2.any(dim=1)
+
+        # A state is solved when every cell has exactly one candidate
+        # and at least one supplied solution is still consistent.
+        solved = is_solved(x2) & ~conflict
+
+        # Number of target bits that were incorrectly eliminated.
+        false_elim = int((target & ~x2).sum().item())
+
+        # Number of candidate bits eliminated in total.
+        elims = int((x & ~x2).sum().item())
+
+        result.update({
+            "loss": loss,
+            "target": target,
+            "false_elim": false_elim,
+            "elims": elims,
+        })
+
+    else:
+        # In inference mode, conflict is determined by either reaching
+        # the lattice bottom or exceeding the CLS conflict threshold.
+        conflict = (
+            is_bottom(x2)
+            | (torch.sigmoid(c) > cfg["theta_cls"])
+        )
+
+        # Solved states must not be marked as conflicted.
+        solved = is_solved(x2) & ~conflict
+
+    # Branch only on rows that are neither conflicted nor solved.
+    active = ~(conflict | solved)
+
+    # Sample a branch for active rows.
+    x3 = branch_pin(
+        x2,
+        b,
+        cfg["tau"],
+        generator
+    )
+
+    # Inactive rows retain x2; active rows receive the branched state.
+    x_new = torch.where(
+        active.view(-1, 1, 1, 1),
+        x3,
+        x2
+    )
+
+    result.update({
+        "x_new": x_new,
+        "conflict": conflict,
+        "solved": solved,
+    })
+
+    return result
+

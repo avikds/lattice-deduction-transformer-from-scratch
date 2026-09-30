@@ -24,6 +24,7 @@ python scaffold.py
 - [x] **12.** asymmetric_bce
 - [x] **13.** ldt_loss
 - [x] **14.** branch_pin
+- [x] **15.** solve_step
 
 ---
 
