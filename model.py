@@ -752,3 +752,80 @@ def ldt_loss(b_iters, c_iters, target, dead, cfg):
     # Average the total loss across all recurrent iterations.
     return torch.stack(losses).mean()
 
+# Step 14 - branch_pin
+def threshold_eliminate(x, probs, theta):
+    # A candidate survives only when it is already alive in x and
+    # its predicted probability reaches the elimination threshold.
+    return x & (probs >= theta)
+
+
+def branch_pin(x, logits, tau, generator):
+    # x and logits have shape (B, n, n, V).
+    B, n, _, V = x.shape
+
+    # Flatten the grid cells so that each row contains n*n cells.
+    x_flat = x.reshape(B, n * n, V)
+    logits_flat = logits.reshape(B, n * n, V)
+
+    # Open cells are cells with at least two surviving candidates.
+    alive_counts = x_flat.sum(dim=-1)
+    open_cells = alive_counts >= 2
+    has_open = open_cells.any(dim=1)
+
+    # Each open cell gets weight 1.0, while non-open cells get 0.0.
+    # For rows with no open cell, place a dummy weight at index 0 so
+    # torch.multinomial always has a valid distribution.
+    cell_weights = open_cells.float()
+    cell_weights = cell_weights.clone()
+    cell_weights[~has_open, 0] = 1.0
+
+    # First random draw: choose a cell uniformly among open cells.
+    chosen_cell = torch.multinomial(
+        cell_weights,
+        num_samples=1,
+        generator=generator
+    ).squeeze(-1)
+
+    batch_idx = torch.arange(B, device=x.device)
+
+    # Gather the candidate mask and logits of the selected cell.
+    selected_alive = x_flat[batch_idx, chosen_cell]
+    selected_logits = logits_flat[batch_idx, chosen_cell]
+
+    # Dead candidates receive -inf so they have zero probability.
+    masked_logits = selected_logits.masked_fill(
+        ~selected_alive,
+        float("-inf")
+    )
+
+    # Rows without an open cell use all-zero logits. These rows will
+    # be returned unchanged, but this keeps the second multinomial
+    # draw valid as specified.
+    masked_logits = torch.where(
+        has_open.unsqueeze(-1),
+        masked_logits,
+        torch.zeros_like(masked_logits)
+    )
+
+    # Second random draw: sample a digit from the selected cell's
+    # surviving candidates according to softmax(logits / tau).
+    probs = torch.softmax(masked_logits / tau, dim=-1)
+
+    chosen_digit = torch.multinomial(
+        probs,
+        num_samples=1,
+        generator=generator
+    ).squeeze(-1)
+
+    # Pin the chosen cell for rows that actually had an open cell.
+    out_flat = x_flat.clone()
+
+    active_rows = batch_idx[has_open]
+    active_cells = chosen_cell[has_open]
+    active_digits = chosen_digit[has_open]
+
+    out_flat[active_rows, active_cells, :] = False
+    out_flat[active_rows, active_cells, active_digits] = True
+
+    return out_flat.reshape_as(x)
+

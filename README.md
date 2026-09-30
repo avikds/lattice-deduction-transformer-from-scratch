@@ -23,6 +23,7 @@ python scaffold.py
 - [x] **11.** LatticeDeductionTransformer
 - [x] **12.** asymmetric_bce
 - [x] **13.** ldt_loss
+- [x] **14.** branch_pin
 
 ---
 
