@@ -726,3 +726,29 @@ def singleton_ce(logits, target):
         selected_target
     )
 
+# Step 13 - ldt_loss
+def ldt_loss(b_iters, c_iters, target, dead, cfg):
+    # Compute the loss independently at every recurrent iteration,
+    # then average the resulting losses over the iteration dimension.
+    losses = []
+
+    for b, c in zip(b_iters, c_iters):
+        # Candidate prediction loss.
+        loss = asymmetric_bce(
+            b,
+            target,
+            cfg["w_pos"],
+            cfg["w_neg"]
+        )
+
+        # Conflict classification loss.
+        loss = loss + cfg["lam_cls"] * conflict_bce(c, dead)
+
+        # Singleton classification loss.
+        loss = loss + cfg["lam_ce"] * singleton_ce(b, target)
+
+        losses.append(loss)
+
+    # Average the total loss across all recurrent iterations.
+    return torch.stack(losses).mean()
+

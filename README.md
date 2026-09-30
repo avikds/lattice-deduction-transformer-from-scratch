@@ -22,6 +22,7 @@ python scaffold.py
 - [x] **10.** TransformerLayer
 - [x] **11.** LatticeDeductionTransformer
 - [x] **12.** asymmetric_bce
+- [x] **13.** ldt_loss
 
 ---
 
