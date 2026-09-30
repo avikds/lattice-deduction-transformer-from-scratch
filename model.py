@@ -613,3 +613,70 @@ class TransformerLayer(nn.Module):
 
         return h
 
+# Step 11 - LatticeDeductionTransformer
+class LatticeDeductionTransformer(nn.Module):
+    def __init__(self, n, V, d, n_heads, n_layers, n_iters, seed=0):
+        super().__init__()
+
+        # Make parameter initialization deterministic for the requested seed.
+        torch.manual_seed(seed)
+
+        self.n = n
+        self.V = V
+        self.n_iters = n_iters
+
+        # Lattice input embedding.
+        self.embed = LatticeEmbedding(n, V, d)
+
+        # Shared Transformer stack used at every recurrent iteration.
+        self.layers = nn.ModuleList(
+            [TransformerLayer(d, n_heads) for _ in range(n_layers)]
+        )
+
+        # Final normalization and output heads.
+        self.norm = nn.LayerNorm(d)
+        self.cand_head = nn.Linear(d, V)
+        self.cls_head = nn.Linear(d, 1)
+
+    def forward(self, x):
+        # Embed the lattice state once; this embedding is re-injected
+        # into the recurrent hidden state at every iteration.
+        e = self.embed(x)
+
+        # Start the recurrent state at zero with the same shape and dtype
+        # as the embedded input.
+        h = torch.zeros_like(e)
+
+        b_iters = []
+        c_iters = []
+
+        for _ in range(self.n_iters):
+            # Re-inject the original input representation.
+            h = h + e
+
+            # Pass through the shared Transformer stack.
+            for layer in self.layers:
+                h = layer(h)
+
+            # Normalize the current hidden state for reading the outputs.
+            h_norm = self.norm(h)
+
+            # Exclude the CLS token and reshape the remaining n*n cell
+            # tokens back to the Sudoku grid.
+            cell_tokens = h_norm[:, 1:, :]
+            b = self.cand_head(cell_tokens).reshape(
+                x.shape[0], self.n, self.n, self.V
+            )
+
+            # Read the conflict logit from the CLS token.
+            c = self.cls_head(h_norm[:, 0, :]).squeeze(-1)
+
+            b_iters.append(b)
+            c_iters.append(c)
+
+        # Stack iterations along a new leading dimension.
+        b_iters = torch.stack(b_iters, dim=0)
+        c_iters = torch.stack(c_iters, dim=0)
+
+        return b_iters, c_iters
+

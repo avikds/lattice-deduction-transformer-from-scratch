@@ -20,6 +20,7 @@ python scaffold.py
 - [x] **8.** augmented_queue
 - [x] **9.** LatticeEmbedding
 - [x] **10.** TransformerLayer
+- [x] **11.** LatticeDeductionTransformer
 
 ---
 
