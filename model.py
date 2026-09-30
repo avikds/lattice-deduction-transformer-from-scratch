@@ -680,3 +680,49 @@ class LatticeDeductionTransformer(nn.Module):
 
         return b_iters, c_iters
 
+# Step 12 - asymmetric_bce
+def asymmetric_bce(logits, target, w_pos, w_neg):
+    # Convert the boolean target to floating point for the loss formula.
+    y = target.float()
+
+    # Stable computation of:
+    # log(sigmoid(logits)) and log(sigmoid(-logits)).
+    loss = -(
+        w_pos * y * F.logsigmoid(logits)
+        + w_neg * (1.0 - y) * F.logsigmoid(-logits)
+    )
+
+    # Mean over all candidate bits.
+    return loss.mean()
+
+
+def conflict_bce(cls_logits, dead):
+    # Binary cross-entropy with logits for the conflict classifier.
+    return F.binary_cross_entropy_with_logits(
+        cls_logits,
+        dead.float()
+    )
+
+
+def singleton_ce(logits, target):
+    # Select cells whose target contains exactly one alive candidate.
+    singleton = target.sum(dim=-1) == 1
+
+    # No singleton cells: return a differentiable zero.
+    if not singleton.any():
+        return logits.sum() * 0.0
+
+    # Select logits and corresponding one-hot targets for singleton cells.
+    selected_logits = logits[singleton]
+    selected_target = target[singleton]
+
+    # Convert the boolean target to an integer tensor before argmax,
+    # because argmax is not supported directly on bool tensors.
+    selected_target = selected_target.long().argmax(dim=-1)
+
+    # Cross-entropy over the digit axis.
+    return F.cross_entropy(
+        selected_logits,
+        selected_target
+    )
+

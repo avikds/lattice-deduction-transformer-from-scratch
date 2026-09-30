@@ -21,6 +21,7 @@ python scaffold.py
 - [x] **9.** LatticeEmbedding
 - [x] **10.** TransformerLayer
 - [x] **11.** LatticeDeductionTransformer
+- [x] **12.** asymmetric_bce
 
 ---
 
