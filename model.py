@@ -333,3 +333,79 @@ def count_matching(puzzle, solutions):
 
     return int(matches.sum())
 
+# Step 6 - make_dataset
+import random
+
+def make_puzzle(solution, n_givens, solutions, rng):
+    # Start from a copy so the original solution is never modified.
+    puzzle = np.array(solution, copy=True)
+
+    n = puzzle.shape[0]
+
+    if puzzle.shape != (n, n):
+        raise ValueError("solution must have shape (n, n)")
+
+    if not (0 <= n_givens <= n * n):
+        raise ValueError("n_givens must be between 0 and n*n")
+
+    # Visit cells in an order determined by rng.shuffle.
+    cells = [(r, c) for r in range(n) for c in range(n)]
+    rng.shuffle(cells)
+
+    # Try blanking cells one by one. A cell is blanked only when the
+    # resulting puzzle still has exactly one solution.
+    for r, c in cells:
+        # We already have the requested number of givens.
+        if np.count_nonzero(puzzle) <= n_givens:
+            break
+
+        # Save the current value so it can be restored if necessary.
+        value = puzzle[r, c]
+        puzzle[r, c] = 0
+
+        # Keep the blank only if exactly one full solution matches.
+        if count_matching(puzzle, solutions) != 1:
+            puzzle[r, c] = value
+
+    return puzzle
+
+
+def make_dataset(num, n_givens_range, solutions, seed):
+    # Use one shared Random instance so that solution selection, the
+    # requested number of givens, and cell shuffling all follow the
+    # deterministic random sequence implied by seed.
+    rng = random.Random(seed)
+
+    if len(solutions) == 0:
+        raise ValueError("solutions must contain at least one solution")
+
+    data = []
+
+    for _ in range(num):
+        # Choose the source solution and number of givens using rng.
+        solution_index = rng.randrange(len(solutions))
+        n_givens = rng.randint(*n_givens_range)
+
+        solution = solutions[solution_index]
+
+        # Construct the puzzle while preserving a unique solution.
+        puzzle = make_puzzle(
+            solution,
+            n_givens,
+            solutions,
+            rng
+        )
+
+        # Convert the NumPy arrays to PyTorch tensors before encoding.
+        puzzle_tensor = torch.as_tensor(puzzle, dtype=torch.long)
+        solution_tensor = torch.as_tensor(solution, dtype=torch.long)
+
+        # x0 is the lattice state of the puzzle, while sol is the
+        # one-hot lattice state of its complete solution.
+        x0 = encode_puzzle(puzzle_tensor).bool()
+        sol = onehot_grid(solution_tensor).bool()
+
+        data.append((x0, sol))
+
+    return data
+

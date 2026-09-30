@@ -15,6 +15,7 @@ python scaffold.py
 - [x] **3.** alpha_target
 - [x] **4.** propagate_singles
 - [x] **5.** all_solutions
+- [x] **6.** make_dataset
 
 ---
 
