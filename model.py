@@ -409,3 +409,85 @@ def make_dataset(num, n_givens_range, solutions, seed):
 
     return data
 
+# Step 7 - apply_symmetry
+def apply_dihedral(x, k):
+    # There are 8 elements in the square's dihedral group:
+    # 4 rotations and 4 reflected rotations.
+    #
+    # For k >= 4, first reflect across the vertical axis by flipping
+    # the column dimension (-2), then rotate the two grid dimensions
+    # (-3, -2) by k mod 4 quarter-turns.
+    k = int(k) % 8
+
+    if k >= 4:
+        x = x.flip(-2)
+
+    return torch.rot90(x, k=k % 4, dims=(-3, -2))
+
+
+def inverse_dihedral(k):
+    # Find the inverse by applying every candidate transformation to
+    # a probe whose grid entries are all distinct.
+    k = int(k) % 8
+
+    # A 3 x 3 grid with a singleton candidate axis lets us distinguish
+    # every spatial transformation unambiguously.
+    probe = torch.arange(9).reshape(3, 3, 1)
+
+    transformed = apply_dihedral(probe, k)
+
+    for candidate in range(8):
+        if torch.equal(apply_dihedral(transformed, candidate), probe):
+            return candidate
+
+    # This should never be reached because the 8 dihedral elements
+    # form a finite group and every element has an inverse.
+    raise RuntimeError("No inverse dihedral element found")
+
+
+def permute_digits(x, perm):
+    # perm[d] gives the destination index for source digit index d.
+    # Example: out[..., perm[d]] = x[..., d].
+    out = torch.empty_like(x)
+
+    for d in range(x.shape[-1]):
+        out[..., perm[d]] = x[..., d]
+
+    return out
+
+
+def random_symmetry(n, generator):
+    # Randomly choose one of the 8 dihedral transformations and one
+    # permutation of the n digit channels.
+    k = int(torch.randint(8, (1,), generator=generator))
+    perm = torch.randperm(n, generator=generator)
+
+    return k, perm
+
+
+def apply_symmetry(x, sym):
+    # Apply the digit permutation first, followed by the spatial
+    # dihedral transformation.
+    k, perm = sym
+
+    x = permute_digits(x, perm)
+    x = apply_dihedral(x, k)
+
+    return x
+
+
+def invert_symmetry(x, sym):
+    # Undo the spatial transformation first, then undo the digit
+    # permutation.
+    k, perm = sym
+
+    x = apply_dihedral(x, inverse_dihedral(k))
+
+    # Construct the inverse permutation. If perm[d] = j, then
+    # inverse_perm[j] = d.
+    inverse_perm = torch.argsort(perm)
+
+    x = permute_digits(x, inverse_perm)
+
+    return x
+
