@@ -930,3 +930,105 @@ def solve_step(model, x, cfg, generator, Y=None, prev=None):
 
     return result
 
+# Step 16 - SolvePool
+class SolvePool:
+    def __init__(self, dataset, pool_size, generator, n, copies=8):
+        # Build the symmetry-augmented queue.
+        self.qx, self.qy = augmented_queue(
+            dataset,
+            copies,
+            n,
+            generator
+        )
+
+        self.cursor = 0
+        self.g = generator
+
+        # Fill the initial pool from the beginning of the queue.
+        init_idx = self._take(pool_size)
+
+        self.x = self.qx[init_idx].clone()
+        self.Y = self.qy[init_idx].clone()
+
+        # The initial previous target is the part of x that agrees with
+        # the unique solution in Y.
+        self.prev = self.x & self.Y[:, 0]
+
+        # Every freshly inserted state starts with age zero.
+        self.age = torch.zeros(
+            pool_size,
+            dtype=torch.long,
+            device=self.x.device
+        )
+
+    def _take(self, k):
+        # Return k consecutive queue positions with wrap-around.
+        N = self.qx.shape[0]
+
+        idx = (
+            torch.arange(k, device=self.qx.device) + self.cursor
+        ) % N
+
+        # Advance the cursor by k positions, retaining wrap-around.
+        self.cursor = (self.cursor + k) % N
+
+        return idx
+
+    def sample(self, B):
+        # Draw B distinct pool slots. The first B entries of a random
+        # permutation give the requested sample without replacement.
+        P = self.x.shape[0]
+
+        idx = torch.randperm(
+            P,
+            generator=self.g,
+            device=self.x.device
+        )[:B]
+
+        return (
+            idx,
+            self.x[idx].clone(),
+            self.Y[idx].clone(),
+            self.prev[idx].clone(),
+        )
+
+    def update(self, idx, x_new, target, terminal, max_age):
+        # Determine which sampled slots are allowed to continue.
+        # A slot continues only when it is non-terminal and has not
+        # reached max_age.
+        current_age = self.age[idx]
+
+        keep = (~terminal) & (current_age < max_age)
+        refill = ~keep
+
+        # Continue eligible slots.
+        if keep.any():
+            keep_idx = idx[keep]
+
+            self.x[keep_idx] = x_new[keep]
+
+            # Age increases by one for continued chains.
+            self.age[keep_idx] = current_age[keep] + 1
+
+            # Replace prev with target only when target is non-empty.
+            target_nonempty = target[keep].flatten(1).any(dim=1)
+
+            if target_nonempty.any():
+                target_idx = keep_idx[target_nonempty]
+                self.prev[target_idx] = target[keep][target_nonempty]
+
+        # Refill every sampled slot that is terminal or too old.
+        if refill.any():
+            refill_idx = idx[refill]
+            num_refill = int(refill.sum().item())
+
+            queue_idx = self._take(num_refill)
+
+            new_x = self.qx[queue_idx]
+            new_Y = self.qy[queue_idx]
+
+            self.x[refill_idx] = new_x
+            self.Y[refill_idx] = new_Y
+            self.prev[refill_idx] = new_x & new_Y[:, 0]
+            self.age[refill_idx] = 0
+
