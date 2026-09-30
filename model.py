@@ -1356,3 +1356,193 @@ def evaluate(
         "costs": costs,
     }
 
+# Step 21 - ldt_experiment
+import time
+
+def ldt_experiment(
+    train_set,
+    test_set,
+    cfg,
+    steps,
+    seed,
+    eval_at=(300, 450),
+    checkpoint_puzzles=30,
+    n=4,
+    box=(2, 2)
+):
+    units = sudoku_units(n, box[0], box[1])
+    peers = peer_mask(n, box[0], box[1])
+
+    # ---------------------------------------------------------------
+    # Line 1: symbolic reference
+    # ---------------------------------------------------------------
+    symbolic_solved = 0
+
+    for x0, _ in test_set:
+        state = propagate_singles(
+            x0.clone(),
+            units,
+            peers
+        )
+
+        if bool(is_solved(state)):
+            symbolic_solved += 1
+
+    lines = [
+        f"symbolic ref: {symbolic_solved}/{len(test_set)} test puzzles"
+    ]
+
+    # ---------------------------------------------------------------
+    # Model
+    # ---------------------------------------------------------------
+    model = LatticeDeductionTransformer(
+        n,
+        n,
+        48,
+        4,
+        2,
+        4,
+        seed=seed
+    )
+
+    checkpoint_set = test_set[:checkpoint_puzzles]
+
+    # Checkpoint evaluation is deduction-only.
+    def eval_fn(m):
+        return evaluate(
+            m,
+            checkpoint_set,
+            cfg,
+            seed=seed,
+            units=units,
+            chains=1,
+            max_rounds=10,
+            augment=False,
+            verify=False
+        )
+
+    # ---------------------------------------------------------------
+    # Training
+    # ---------------------------------------------------------------
+    start = time.perf_counter()
+
+    history, evals = train_ldt(
+        model,
+        train_set,
+        steps,
+        cfg,
+        seed,
+        eval_fn=eval_fn,
+        eval_at=eval_at
+    )
+
+    elapsed = time.perf_counter() - start
+
+    recent = history[-100:]
+    total_elims = sum(item["elims"] for item in recent)
+    total_false_elims = sum(item["false_elim"] for item in recent)
+
+    lines.append(
+        f"training: {steps} steps, time={elapsed:.4f}, "
+        f"elims={total_elims}, false_elim={total_false_elims}"
+    )
+
+    # ---------------------------------------------------------------
+    # Line 3: train/test trend at checkpoints and final model
+    # ---------------------------------------------------------------
+    trend_parts = []
+
+    for s in sorted(evals):
+        r = evals[s]
+        trend_parts.append(
+            f"{s} steps: accuracy={r['accuracy']:.4f}, "
+            f"soundness={r['soundness']:.4f}, "
+            f"p50={r['p50']:.4f}"
+        )
+
+    final_checkpoint = eval_fn(model)
+
+    trend_parts.append(
+        f"{steps} steps: accuracy={final_checkpoint['accuracy']:.4f}, "
+        f"soundness={final_checkpoint['soundness']:.4f}, "
+        f"p50={final_checkpoint['p50']:.4f}"
+    )
+
+    lines.append(
+        "train/test trend: " + "; ".join(trend_parts)
+    )
+
+    # ---------------------------------------------------------------
+    # Line 4: deduction-only final evaluation
+    # ---------------------------------------------------------------
+    deduction = evaluate(
+        model,
+        test_set,
+        cfg,
+        seed=seed,
+        units=units,
+        chains=1,
+        max_rounds=10,
+        augment=False,
+        verify=False
+    )
+
+    lines.append(
+        f"deduction only: accuracy={deduction['accuracy']:.4f}, "
+        f"soundness={deduction['soundness']:.4f}, "
+        f"wrong={deduction['wrong']}, "
+        f"abstain={deduction['abstain']}, "
+        f"p50={deduction['p50']:.4f}, "
+        f"p90={deduction['p90']:.4f}"
+    )
+
+    # ---------------------------------------------------------------
+    # Line 5: parallel search
+    # ---------------------------------------------------------------
+    parallel = evaluate(
+        model,
+        test_set,
+        cfg,
+        seed=seed,
+        units=units,
+        chains=8,
+        max_rounds=30,
+        augment=True,
+        verify=False
+    )
+
+    lines.append(
+        f"parallel search: accuracy={parallel['accuracy']:.4f}, "
+        f"soundness={parallel['soundness']:.4f}, "
+        f"wrong={parallel['wrong']}, "
+        f"abstain={parallel['abstain']}, "
+        f"p50={parallel['p50']:.4f}, "
+        f"p90={parallel['p90']:.4f}"
+    )
+
+    # ---------------------------------------------------------------
+    # Line 6: parallel search with verification
+    # ---------------------------------------------------------------
+    verified = evaluate(
+        model,
+        test_set,
+        cfg,
+        seed=seed,
+        units=units,
+        chains=8,
+        max_rounds=30,
+        augment=True,
+        verify=True
+    )
+
+    lines.append(
+        f"parallel search: accuracy={verified['accuracy']:.4f}, "
+        f"soundness={verified['soundness']:.4f}, "
+        f"wrong={verified['wrong']}, "
+        f"abstain={verified['abstain']}, "
+        f"p50={verified['p50']:.4f}, "
+        f"p90={verified['p90']:.4f}"
+    )
+
+    return lines
+

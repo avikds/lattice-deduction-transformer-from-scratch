@@ -30,6 +30,7 @@ python scaffold.py
 - [x] **18.** train_ldt
 - [x] **19.** solve_puzzle
 - [x] **20.** evaluate
+- [x] **21.** ldt_experiment
 
 ---
 
