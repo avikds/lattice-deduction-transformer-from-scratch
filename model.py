@@ -572,3 +572,44 @@ class LatticeEmbedding(nn.Module):
 
         return torch.cat([cls, h], dim=1)
 
+# Step 10 - TransformerLayer
+class TransformerLayer(nn.Module):
+    def __init__(self, d, n_heads):
+        super().__init__()
+
+        # Pre-normalization before the self-attention sublayer.
+        self.ln1 = nn.LayerNorm(d)
+
+        # Multi-head self-attention with batch-first input:
+        # (B, sequence_length, d).
+        self.attn = nn.MultiheadAttention(
+            d,
+            n_heads,
+            batch_first=True
+        )
+
+        # Pre-normalization before the feed-forward sublayer.
+        self.ln2 = nn.LayerNorm(d)
+
+        # Position-wise feed-forward network with a 4*d hidden dimension.
+        self.ff = nn.Sequential(
+            nn.Linear(d, 4 * d),
+            nn.GELU(),
+            nn.Linear(4 * d, d)
+        )
+
+    def forward(self, h):
+        # Pre-norm self-attention followed by a residual connection.
+        attn_input = self.ln1(h)
+        attn_output, _ = self.attn(
+            attn_input,
+            attn_input,
+            attn_input
+        )
+        h = h + attn_output
+
+        # Pre-norm feed-forward network followed by a residual connection.
+        h = h + self.ff(self.ln2(h))
+
+        return h
+

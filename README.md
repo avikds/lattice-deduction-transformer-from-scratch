@@ -19,6 +19,7 @@ python scaffold.py
 - [x] **7.** apply_symmetry
 - [x] **8.** augmented_queue
 - [x] **9.** LatticeEmbedding
+- [x] **10.** TransformerLayer
 
 ---
 
